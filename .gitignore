@@ -1,0 +1,37 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.egg-info/
+build/
+dist/
+wheels/
+.venv/
+venv/
+env/
+
+# pytest
+.pytest_cache/
+.cache/
+
+# Triton compilation cache
+.triton/
+
+# Editor / IDE
+.vscode/
+.idea/
+*.swp
+.DS_Store
+
+# Claude Code local settings
+.claude/
+
+# Benchmark run artifacts — keep committed reference results, ignore one-off runs
+benchmark/results/*.json
+!benchmark/results/rtx3060_median5.json
+
+# Logs
+*.log
+
+# uv lockfile — this is a library; let users resolve deps from pyproject.toml
+uv.lock

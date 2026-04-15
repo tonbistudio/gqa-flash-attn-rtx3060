@@ -1,0 +1,31 @@
+{
+  "device": "NVIDIA GeForce RTX 3060",
+  "dtype": "torch.bfloat16",
+  "trials": 5,
+  "config": {
+    "batch": 1,
+    "num_heads": 32,
+    "num_kv_heads": 8,
+    "head_dim": 128,
+    "model": "Llama 3.1 8B attention shape"
+  },
+  "env": {
+    "torch": "2.10.0+cu128",
+    "triton": "3.6.0 (triton-windows)",
+    "flash_attn2": "kernels-community/flash-attn2 (torch210-cu128-x86_64-windows)",
+    "os": "Windows 11",
+    "driver": "NVIDIA 525+"
+  },
+  "rows": [
+    {"workload": "prefill", "seq_kv": 2048,  "ours_ms": 1.673,  "fa2_ms": 1.896,  "sdpa_ms": 2.463,  "speedup_vs_fa2": 1.133, "speedup_vs_sdpa": 1.472, "peak_mem_gb": 0.05},
+    {"workload": "prefill", "seq_kv": 4096,  "ours_ms": 6.654,  "fa2_ms": 6.917,  "sdpa_ms": 10.414, "speedup_vs_fa2": 1.040, "speedup_vs_sdpa": 1.565, "peak_mem_gb": 0.09},
+    {"workload": "prefill", "seq_kv": 6144,  "ours_ms": 14.745, "fa2_ms": 14.803, "sdpa_ms": 22.943, "speedup_vs_fa2": 1.004, "speedup_vs_sdpa": 1.556, "peak_mem_gb": 0.17},
+    {"workload": "prefill", "seq_kv": 8192,  "ours_ms": 26.171, "fa2_ms": 25.333, "sdpa_ms": 40.545, "speedup_vs_fa2": 0.968, "speedup_vs_sdpa": 1.549, "peak_mem_gb": 0.23},
+    {"workload": "prefill", "seq_kv": 12288, "ours_ms": 56.367, "fa2_ms": 56.129, "sdpa_ms": 87.704, "speedup_vs_fa2": 0.996, "speedup_vs_sdpa": 1.556, "peak_mem_gb": 0.34},
+    {"workload": "prefill", "seq_kv": 16384, "ours_ms": 103.405,"fa2_ms": 102.753,"sdpa_ms": 158.313,"speedup_vs_fa2": 0.994, "speedup_vs_sdpa": 1.531, "peak_mem_gb": 0.45},
+    {"workload": "decode",  "seq_kv": 2048,  "ours_ms": 0.164,  "fa2_ms": 0.301,  "sdpa_ms": 0.300,  "speedup_vs_fa2": 1.835, "speedup_vs_sdpa": 1.832, "peak_mem_gb": 0.02},
+    {"workload": "decode",  "seq_kv": 4096,  "ours_ms": 0.183,  "fa2_ms": 0.267,  "sdpa_ms": 0.384,  "speedup_vs_fa2": 1.459, "speedup_vs_sdpa": 2.100, "peak_mem_gb": 0.02},
+    {"workload": "decode",  "seq_kv": 8192,  "ours_ms": 0.142,  "fa2_ms": 0.419,  "sdpa_ms": 0.600,  "speedup_vs_fa2": 2.951, "speedup_vs_sdpa": 4.226, "peak_mem_gb": 0.04},
+    {"workload": "decode",  "seq_kv": 16384, "ours_ms": 0.279,  "fa2_ms": 0.816,  "sdpa_ms": 1.191,  "speedup_vs_fa2": 2.925, "speedup_vs_sdpa": 4.268, "peak_mem_gb": 0.07}
+  ]
+}

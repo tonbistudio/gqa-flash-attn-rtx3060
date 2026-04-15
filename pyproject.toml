@@ -1,0 +1,46 @@
+[project]
+name = "gqa-flash-attn-rtx3060"
+version = "0.1.0"
+description = "Triton GQA flash attention kernel tuned for NVIDIA RTX 3060 (sm_86)"
+readme = "README.md"
+requires-python = ">=3.10"
+license = { file = "LICENSE" }
+authors = [
+    { name = "gqa-flash-attn-rtx3060 contributors" },
+]
+keywords = ["triton", "flash-attention", "gqa", "rtx-3060", "sm_86", "cuda"]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3",
+    "Topic :: Scientific/Engineering :: Artificial Intelligence",
+    "Environment :: GPU :: NVIDIA CUDA",
+]
+dependencies = [
+    "torch>=2.10",
+    # Triton. On Windows: `triton-windows`. On Linux: `triton` (installed via torch).
+]
+
+[project.optional-dependencies]
+benchmark = [
+    "kernels>=0.13",   # HuggingFace kernels, for the flash-attn2 baseline
+]
+dev = [
+    "pytest>=7",
+]
+windows = [
+    "triton-windows>=3.6",
+]
+
+[project.urls]
+Homepage = "https://github.com/YOUR/gqa-flash-attn-rtx3060"
+Repository = "https://github.com/YOUR/gqa-flash-attn-rtx3060"
+Issues = "https://github.com/YOUR/gqa-flash-attn-rtx3060/issues"
+
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["gqa_kernels*"]
