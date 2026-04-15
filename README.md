@@ -48,7 +48,7 @@ The kernel is written for sm_86 specifically — it autotunes against the 3060's
 
 ```bash
 pip install torch>=2.10 triton-windows kernels
-git clone https://github.com/YOUR/gqa-flash-attn-rtx3060.git
+git clone https://github.com/tonbistudio/gqa-flash-attn-rtx3060.git
 cd gqa-flash-attn-rtx3060
 ```
 

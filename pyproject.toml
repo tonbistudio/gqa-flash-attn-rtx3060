@@ -33,9 +33,9 @@ windows = [
 ]
 
 [project.urls]
-Homepage = "https://github.com/YOUR/gqa-flash-attn-rtx3060"
-Repository = "https://github.com/YOUR/gqa-flash-attn-rtx3060"
-Issues = "https://github.com/YOUR/gqa-flash-attn-rtx3060/issues"
+Homepage = "https://github.com/tonbistudio/gqa-flash-attn-rtx3060"
+Repository = "https://github.com/tonbistudio/gqa-flash-attn-rtx3060"
+Issues = "https://github.com/tonbistudio/gqa-flash-attn-rtx3060/issues"
 
 [build-system]
 requires = ["setuptools>=61"]
