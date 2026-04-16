@@ -55,36 +55,86 @@ def _make(seq_q, seq_kv):
     return q, k, v
 
 
-def _sdpa(q, k, v, causal):
+def _sdpa_expand(k, v):
+    """Expand K/V from num_kv_heads -> num_heads once, outside timing.
+    Fair-comparison protocol: same principle as FA2 transpose."""
     group = NUM_HEADS // NUM_KV_HEADS
-    ke, ve = k.repeat_interleave(group, dim=1), v.repeat_interleave(group, dim=1)
-    return F.scaled_dot_product_attention(q, ke, ve, is_causal=causal)
+    return k.repeat_interleave(group, dim=1), v.repeat_interleave(group, dim=1)
 
 
-def _fa2(q, k, v, causal):
-    q_t = q.transpose(1, 2).contiguous()
-    k_t = k.transpose(1, 2).contiguous()
-    v_t = v.transpose(1, 2).contiguous()
-    out = _FA2.flash_attn_func(q_t, k_t, v_t, causal=causal)
-    return out.transpose(1, 2)
+def _sdpa_call(q, k_exp, v_exp, sdpa_causal):
+    """NOTE: PyTorch SDPA's `is_causal=True` uses UPPER-LEFT alignment. For
+    seq_q=1 (decode), that would restrict the single query to attend only to
+    K[0], which is wrong for our intended semantics (bottom-right / full-cache
+    attend). Callers must pass `sdpa_causal=False` for decode and
+    `sdpa_causal=True` only when seq_q == seq_kv."""
+    return F.scaled_dot_product_attention(q, k_exp, v_exp, is_causal=sdpa_causal)
+
+
+def _to_fa2_layout(q, k, v):
+    """Convert (B, H, S, D) -> (B, S, H, D) once, outside the timing loop.
+    In a real inference stack, K/V live in whichever layout was chosen — you
+    pay the transpose once at a boundary, not per attention layer."""
+    return (q.transpose(1, 2).contiguous(),
+            k.transpose(1, 2).contiguous(),
+            v.transpose(1, 2).contiguous())
+
+
+def _fa2_call(q_t, k_t, v_t, causal):
+    """Time only the kernel. Note: on Windows the HF-kernels build of FA2 has
+    a shape-assertion bug in `flash_attn_with_kvcache` for seqlen_q=1 + GQA
+    (num_heads != num_kv_heads), so we can't use FA2's decode-specialized
+    path for our workload on this platform. `flash_attn_func` is what a
+    Windows user would actually fall back to.
+
+    Returns FA2 output in its native (B, Sq, H, D) layout — caller does the
+    transpose back if needed. Fair comparison: no hidden transpose overhead.
+    """
+    return _FA2.flash_attn_func(q_t, k_t, v_t, causal=causal)
 
 
 def correctness_check():
+    """Verify ALL three kernels match the naive reference, not just ours.
+    SDPA's is_causal semantics trapped us once — this gate should catch it."""
     max_tol, mean_tol = 1e-2, 1e-3
     print(f'[correctness] gate: max_abs < {max_tol:g}, mean_abs < {mean_tol:g}')
     cases = ([(L, L, 'prefill') for L in CORRECTNESS_LENS]
              + [(1, L, 'decode') for L in CORRECTNESS_LENS])
+    all_ok = True
     for sq, sk, label in cases:
         q, k, v = _make(sq, sk)
-        out = gqa_flash_attn(q, k, v, causal=True)
         ref = gqa_reference(q, k, v, causal=True)
-        diff = (out.float() - ref.float()).abs()
-        mx, mn = diff.max().item(), diff.mean().item()
+
+        # Ours — native (B, H, S, D) layout, bottom-right causal.
+        ours = gqa_flash_attn(q, k, v, causal=True)
+        mx = (ours.float() - ref.float()).abs().max().item()
+        mn = (ours.float() - ref.float()).abs().mean().item()
         ok = mx < max_tol and mn < mean_tol
-        print(f'[correctness] {label:<7} L={sk:>5d}  max={mx:.2e}  mean={mn:.2e}  {"ok" if ok else "FAIL"}')
-        if not ok:
-            return False
-    return True
+        all_ok &= ok
+        print(f'[correctness] {label:<7} L={sk:>5d}  ours: max={mx:.2e} mean={mn:.2e}  {"ok" if ok else "FAIL"}')
+
+        # SDPA — upper-left is_causal. For square (prefill) it matches bottom-right.
+        # For seq_q < seq_kv (decode), must use is_causal=False to attend to all K.
+        sdpa_causal = (sq == sk)
+        k_exp, v_exp = _sdpa_expand(k, v)
+        sdpa = _sdpa_call(q, k_exp, v_exp, sdpa_causal)
+        mx = (sdpa.float() - ref.float()).abs().max().item()
+        mn = (sdpa.float() - ref.float()).abs().mean().item()
+        ok = mx < max_tol and mn < mean_tol
+        all_ok &= ok
+        print(f'[correctness] {label:<7} L={sk:>5d}  sdpa: max={mx:.2e} mean={mn:.2e}  {"ok" if ok else "FAIL"}')
+
+        # FA2 — bottom-right causal, like us.
+        if _FA2 is not None:
+            q_fa2, k_fa2, v_fa2 = _to_fa2_layout(q, k, v)
+            fa2 = _fa2_call(q_fa2, k_fa2, v_fa2, causal=True).transpose(1, 2)
+            mx = (fa2.float() - ref.float()).abs().max().item()
+            mn = (fa2.float() - ref.float()).abs().mean().item()
+            ok = mx < max_tol and mn < mean_tol
+            all_ok &= ok
+            print(f'[correctness] {label:<7} L={sk:>5d}  fa2:  max={mx:.2e} mean={mn:.2e}  {"ok" if ok else "FAIL"}')
+
+    return all_ok
 
 
 def _time(fn):
@@ -109,14 +159,25 @@ def run_sweep(prefill_lens, decode_lens):
         for L in lens:
             sq, sk, causal = (L, L, True) if workload == 'prefill' else (1, L, True)
             q, k, v = _make(sq, sk)
-            gqa_flash_attn(q, k, v, causal=causal)
-            _sdpa(q, k, v, causal)
+            # Pre-convert to each kernel's native layout outside the timing loop.
+            # Ours: (B, H, S, D) native. FA2: (B, S, H, D) via transpose+contiguous.
+            # Pre-convert inputs to each kernel's native layout outside the
+            # timing loop. Ours: (B, H, S, D) native. FA2: (B, S, H, D).
+            # SDPA: (B, num_heads, S, D) with K/V expanded across the group.
+            q_fa2, k_fa2, v_fa2 = (None, None, None)
             if _FA2 is not None:
-                _fa2(q, k, v, causal)
+                q_fa2, k_fa2, v_fa2 = _to_fa2_layout(q, k, v)
+            k_sdpa, v_sdpa = _sdpa_expand(k, v)
+            # SDPA uses upper-left is_causal; only pass True when seq_q==seq_kv.
+            sdpa_causal = (sq == sk)
+            gqa_flash_attn(q, k, v, causal=causal)
+            _sdpa_call(q, k_sdpa, v_sdpa, sdpa_causal)
+            if _FA2 is not None:
+                _fa2_call(q_fa2, k_fa2, v_fa2, causal)
             torch.cuda.synchronize()
             ours_ms, ours_mem = _time(lambda: gqa_flash_attn(q, k, v, causal=causal))
-            sdpa_ms, _ = _time(lambda: _sdpa(q, k, v, causal))
-            fa2_ms = _time(lambda: _fa2(q, k, v, causal))[0] if _FA2 is not None else float('nan')
+            sdpa_ms, _ = _time(lambda: _sdpa_call(q, k_sdpa, v_sdpa, sdpa_causal))
+            fa2_ms = _time(lambda: _fa2_call(q_fa2, k_fa2, v_fa2, causal))[0] if _FA2 is not None else float('nan')
             row = {
                 'workload': workload, 'seq_kv': L,
                 'ours_ms': ours_ms, 'fa2_ms': fa2_ms, 'sdpa_ms': sdpa_ms,

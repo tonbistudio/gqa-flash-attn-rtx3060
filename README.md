@@ -1,6 +1,6 @@
 # gqa-flash-attn-rtx3060
 
-**A GQA flash attention kernel tuned for the NVIDIA RTX 3060.** Triton, Windows, batch=1. Faster than `flash-attn2` on 9 of 10 tracked workload cells. Up to **2.95× faster on long-context decode**.
+**A GQA flash attention kernel tuned for the NVIDIA RTX 3060.** Written in Triton, runs on Windows, matches flash-attn2 across prefill and decode. Beats PyTorch SDPA by 1.5–7×.
 
 Built for Llama 3.1 8B attention shape (`num_heads=32, num_kv_heads=8, head_dim=128`) but the kernel is general over these dims.
 
@@ -8,24 +8,29 @@ Built for Llama 3.1 8B attention shape (`num_heads=32, num_kv_heads=8, head_dim=
 
 ## Benchmark
 
-All numbers: **NVIDIA GeForce RTX 3060**, 5-trial median, bf16, batch=1, Windows 11, torch 2.10.0+cu128, `triton-windows` 3.6.0. Baselines: `kernels-community/flash-attn2` (the real thing via HF Kernels) and PyTorch SDPA (flash backend).
+All numbers: **NVIDIA GeForce RTX 3060**, 5-trial median, bf16, batch=1, Windows 11, torch 2.10.0+cu128, `triton-windows` 3.6.0. Baselines: `kernels-community/flash-attn2` (via `flash_attn_func`) and PyTorch SDPA. Each kernel timed with inputs in its native layout (transpose/expand costs excluded — see notes below).
 
 | Workload   | seq_kv | ours (ms) | FA2 (ms) | SDPA (ms) | **vs FA2** | vs SDPA |
 |------------|-------:|----------:|---------:|----------:|-----------:|--------:|
-| Prefill    |   2048 |     1.67  |    1.90  |     2.46  | **1.13×**  |  1.47×  |
-| Prefill    |   4096 |     6.65  |    6.92  |    10.41  | **1.04×**  |  1.57×  |
-| Prefill    |   6144 |    14.75  |   14.80  |    22.94  | **1.00×**  |  1.56×  |
-| Prefill    |   8192 |    26.17  |   25.33  |    40.55  |   0.97×    |  1.55×  |
-| Prefill    |  12288 |    56.37  |   56.13  |    87.70  | **1.00×**  |  1.56×  |
-| Prefill    |  16384 |   103.41  |  102.75  |   158.31  |   0.99×    |  1.53×  |
-| **Decode** |   2048 |     0.16  |    0.30  |     0.30  | **1.84×**  |  1.83×  |
-| **Decode** |   4096 |     0.18  |    0.27  |     0.38  | **1.46×**  |  2.10×  |
-| **Decode** |   8192 |     0.14  |    0.42  |     0.60  | **2.95×**  |  4.23×  |
-| **Decode** |  16384 |     0.28  |    0.82  |     1.19  | **2.93×**  |  4.27×  |
+| Prefill    |   2048 |     1.59  |    1.57  |     2.54  |   0.99×    |  1.60×  |
+| Prefill    |   4096 |     6.01  |    6.03  |     9.62  | **1.00×**  |  1.60×  |
+| Prefill    |   6144 |    13.70  |   13.51  |    21.53  |   0.99×    |  1.57×  |
+| Prefill    |   8192 |    24.27  |   23.44  |    37.13  |   0.97×    |  1.53×  |
+| Prefill    |  12288 |    52.65  |   54.22  |    85.01  | **1.03×**  |  1.61×  |
+| Prefill    |  16384 |    96.20  |   97.55  |   149.17  | **1.01×**  |  1.55×  |
+| Decode     |   2048 |     0.13  |    0.13  |     0.25  | **1.02×**  |  1.89×  |
+| Decode     |   4096 |     0.13  |    0.14  |     0.48  | **1.02×**  |  3.65×  |
+| Decode     |   8192 |     0.14  |    0.14  |     1.00  |   1.00×    |  7.39×  |
+| Decode     |  16384 |     0.27  |    0.26  |     1.97  |   0.94×    |  7.30×  |
 
-**Read**: matches or beats flash-attn2 on 5/6 prefill lengths, crushes flash-attn2 on every decode length. The single cell where FA2 edges ahead (prefill@8K) sits inside autotune variance.
+**Read**: matches flash-attn2 across prefill and decode (0.94–1.03×), beats SDPA by 1.5–7.4×.
 
 Reproduce: `python benchmark/run.py --trials 5`.
+
+**Benchmark notes:**
+- FA2's decode-specialized `flash_attn_with_kvcache` has a shape-assertion bug for `seqlen_q=1 + GQA` on this Windows build. Both workloads use `flash_attn_func` (the general-purpose path).
+- SDPA's `is_causal=True` uses upper-left alignment; for decode (`seq_q=1`) this would restrict attention to `K[0]` only. The benchmark correctly uses `is_causal=False` for decode.
+- Each kernel is timed with inputs pre-converted to its native layout. Our kernel takes `(B, H, S, D)`; FA2 takes `(B, S, H, D)` (pre-transposed); SDPA takes pre-expanded K/V (`num_kv_heads → num_heads`). Conversion costs are stack-boundary costs, not per-layer costs.
 
 ---
 

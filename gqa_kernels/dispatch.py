@@ -46,7 +46,7 @@ def gqa_flash_attn(q, k, v, causal=True):
 
     o = torch.empty_like(q)
     scale_log2 = (head_dim ** -0.5) * LOG2E
-    grid = lambda META: (num_kv_heads, triton.cdiv(seq_q, META['BLOCK_M']), batch)
+    grid = lambda META: (triton.cdiv(seq_q, META['BLOCK_M']), num_kv_heads, batch)
     gqa_fwd_kernel[grid](
         q, k, v, o,
         q.stride(0), q.stride(1), q.stride(2), q.stride(3),

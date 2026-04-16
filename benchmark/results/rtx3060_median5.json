@@ -12,20 +12,26 @@
   "env": {
     "torch": "2.10.0+cu128",
     "triton": "3.6.0 (triton-windows)",
-    "flash_attn2": "kernels-community/flash-attn2 (torch210-cu128-x86_64-windows)",
+    "flash_attn2": "kernels-community/flash-attn2 via flash_attn_func (torch210-cu128-x86_64-windows)",
+    "sdpa": "PyTorch F.scaled_dot_product_attention with pre-expanded K/V",
     "os": "Windows 11",
     "driver": "NVIDIA 525+"
   },
+  "notes": {
+    "fa2_decode_path": "FA2's decode-specialized flash_attn_with_kvcache has a shape-assertion bug for seqlen_q=1 + GQA on this Windows build. Comparison uses flash_attn_func (the general-purpose path) for both prefill and decode.",
+    "sdpa_decode_causal": "SDPA's is_causal=True uses upper-left alignment. For decode (seq_q=1), this would restrict attention to K[0] only. Benchmark correctly uses is_causal=False for decode.",
+    "timing_protocol": "All kernels timed with pre-converted inputs in their native layout. Transpose/expand costs are NOT included — they represent one-time stack-boundary costs, not per-layer costs."
+  },
   "rows": [
-    {"workload": "prefill", "seq_kv": 2048,  "ours_ms": 1.673,  "fa2_ms": 1.896,  "sdpa_ms": 2.463,  "speedup_vs_fa2": 1.133, "speedup_vs_sdpa": 1.472, "peak_mem_gb": 0.05},
-    {"workload": "prefill", "seq_kv": 4096,  "ours_ms": 6.654,  "fa2_ms": 6.917,  "sdpa_ms": 10.414, "speedup_vs_fa2": 1.040, "speedup_vs_sdpa": 1.565, "peak_mem_gb": 0.09},
-    {"workload": "prefill", "seq_kv": 6144,  "ours_ms": 14.745, "fa2_ms": 14.803, "sdpa_ms": 22.943, "speedup_vs_fa2": 1.004, "speedup_vs_sdpa": 1.556, "peak_mem_gb": 0.17},
-    {"workload": "prefill", "seq_kv": 8192,  "ours_ms": 26.171, "fa2_ms": 25.333, "sdpa_ms": 40.545, "speedup_vs_fa2": 0.968, "speedup_vs_sdpa": 1.549, "peak_mem_gb": 0.23},
-    {"workload": "prefill", "seq_kv": 12288, "ours_ms": 56.367, "fa2_ms": 56.129, "sdpa_ms": 87.704, "speedup_vs_fa2": 0.996, "speedup_vs_sdpa": 1.556, "peak_mem_gb": 0.34},
-    {"workload": "prefill", "seq_kv": 16384, "ours_ms": 103.405,"fa2_ms": 102.753,"sdpa_ms": 158.313,"speedup_vs_fa2": 0.994, "speedup_vs_sdpa": 1.531, "peak_mem_gb": 0.45},
-    {"workload": "decode",  "seq_kv": 2048,  "ours_ms": 0.164,  "fa2_ms": 0.301,  "sdpa_ms": 0.300,  "speedup_vs_fa2": 1.835, "speedup_vs_sdpa": 1.832, "peak_mem_gb": 0.02},
-    {"workload": "decode",  "seq_kv": 4096,  "ours_ms": 0.183,  "fa2_ms": 0.267,  "sdpa_ms": 0.384,  "speedup_vs_fa2": 1.459, "speedup_vs_sdpa": 2.100, "peak_mem_gb": 0.02},
-    {"workload": "decode",  "seq_kv": 8192,  "ours_ms": 0.142,  "fa2_ms": 0.419,  "sdpa_ms": 0.600,  "speedup_vs_fa2": 2.951, "speedup_vs_sdpa": 4.226, "peak_mem_gb": 0.04},
-    {"workload": "decode",  "seq_kv": 16384, "ours_ms": 0.279,  "fa2_ms": 0.816,  "sdpa_ms": 1.191,  "speedup_vs_fa2": 2.925, "speedup_vs_sdpa": 4.268, "peak_mem_gb": 0.07}
+    {"workload": "prefill", "seq_kv": 2048,  "ours_ms": 1.585,  "fa2_ms": 1.571,  "sdpa_ms": 2.539,  "speedup_vs_fa2": 0.99, "speedup_vs_sdpa": 1.60, "peak_mem_gb": 0.10},
+    {"workload": "prefill", "seq_kv": 4096,  "ours_ms": 6.010,  "fa2_ms": 6.025,  "sdpa_ms": 9.615,  "speedup_vs_fa2": 1.00, "speedup_vs_sdpa": 1.60, "peak_mem_gb": 0.20},
+    {"workload": "prefill", "seq_kv": 6144,  "ours_ms": 13.703, "fa2_ms": 13.506, "sdpa_ms": 21.526, "speedup_vs_fa2": 0.99, "speedup_vs_sdpa": 1.57, "peak_mem_gb": 0.29},
+    {"workload": "prefill", "seq_kv": 8192,  "ours_ms": 24.266, "fa2_ms": 23.443, "sdpa_ms": 37.130, "speedup_vs_fa2": 0.97, "speedup_vs_sdpa": 1.53, "peak_mem_gb": 0.38},
+    {"workload": "prefill", "seq_kv": 12288, "ours_ms": 52.647, "fa2_ms": 54.220, "sdpa_ms": 85.005, "speedup_vs_fa2": 1.03, "speedup_vs_sdpa": 1.61, "peak_mem_gb": 0.57},
+    {"workload": "prefill", "seq_kv": 16384, "ours_ms": 96.195, "fa2_ms": 97.547, "sdpa_ms": 149.172,"speedup_vs_fa2": 1.01, "speedup_vs_sdpa": 1.55, "peak_mem_gb": 0.76},
+    {"workload": "decode",  "seq_kv": 2048,  "ours_ms": 0.131,  "fa2_ms": 0.134,  "sdpa_ms": 0.247,  "speedup_vs_fa2": 1.02, "speedup_vs_sdpa": 1.89, "peak_mem_gb": 0.06},
+    {"workload": "decode",  "seq_kv": 4096,  "ours_ms": 0.132,  "fa2_ms": 0.135,  "sdpa_ms": 0.483,  "speedup_vs_fa2": 1.02, "speedup_vs_sdpa": 3.65, "peak_mem_gb": 0.10},
+    {"workload": "decode",  "seq_kv": 8192,  "ours_ms": 0.135,  "fa2_ms": 0.135,  "sdpa_ms": 0.998,  "speedup_vs_fa2": 1.00, "speedup_vs_sdpa": 7.39, "peak_mem_gb": 0.20},
+    {"workload": "decode",  "seq_kv": 16384, "ours_ms": 0.270,  "fa2_ms": 0.255,  "sdpa_ms": 1.972,  "speedup_vs_fa2": 0.94, "speedup_vs_sdpa": 7.30, "peak_mem_gb": 0.38}
   ]
 }

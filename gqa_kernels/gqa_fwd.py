@@ -47,8 +47,8 @@ def gqa_fwd_kernel(
     BLOCK_M: tl.constexpr,
     BLOCK_N: tl.constexpr,
 ):
-    pid_kv = tl.program_id(0)
-    pid_m = tl.program_id(1)
+    pid_m = tl.program_id(0)
+    pid_kv = tl.program_id(1)
     pid_b = tl.program_id(2)
 
     offs_d = tl.arange(0, HEAD_DIM)
@@ -75,6 +75,7 @@ def gqa_fwd_kernel(
     q_ptrs = (Q + pid_b * stride_qb + q_heads[:, None] * stride_qh
               + row_global[:, None] * stride_qm + offs_d[None, :] * stride_qd)
     q = tl.load(q_ptrs, mask=row_valid[:, None], other=0.0)
+    q = (q * scale).to(q.dtype)
 
     m_i = tl.full([BLOCK_MG], float('-inf'), dtype=tl.float32)
     l_i = tl.zeros([BLOCK_MG], dtype=tl.float32)
@@ -89,7 +90,7 @@ def gqa_fwd_kernel(
         k = tl.load(k_ptrs, mask=n_mask[:, None], other=0.0)
         v = tl.load(v_ptrs, mask=n_mask[:, None], other=0.0)
 
-        qk = tl.dot(q, tl.trans(k)) * scale
+        qk = tl.dot(q, tl.trans(k))
         qk = tl.where(n_mask[None, :], qk, float('-inf'))
         if IS_CAUSAL:
             qk = tl.where(q_pos[:, None] >= n_offs[None, :], qk, float('-inf'))
@@ -98,7 +99,8 @@ def gqa_fwd_kernel(
         alpha = tl.exp2(m_i - m_new)
         p = tl.exp2(qk - m_new[:, None])
         l_i = alpha * l_i + tl.sum(p, axis=1)
-        acc = alpha[:, None] * acc + tl.dot(p.to(v.dtype), v)
+        acc = acc * alpha[:, None]
+        acc = tl.dot(p.to(v.dtype), v, acc)
         m_i = m_new
 
     acc = acc / l_i[:, None]
